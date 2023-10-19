@@ -6,30 +6,134 @@ from torch.nn import init
 #import utils
 import random
 
-class AdaIN(nn.Module):
-    def __init__(self):
+class ADAIN(nn.Module):
+    def __init__(self, norm_nc, feature_nc):
         super().__init__()
 
-    def forward(self, x, y_fc1, y_fc2):
-        eps = 1e-5
-        mean_x = torch.mean(x, dim=[2,3])
-		#mean_y = torch.mean(y, dim=[2,3])
+        self.param_free_norm = nn.InstanceNorm2d(norm_nc, affine=False)
 
-        std_x = torch.std(x, dim=[2,3])
-		#std_y = torch.std(y, dim=[2,3])
+        # The dimension of the intermediate embedding space. Yes, hardcoded.
+        nhidden = 128
+        use_bias=True
 
-        mean_x = mean_x.unsqueeze(-1).unsqueeze(-1)
-		#mean_y = mean_y.unsqueeze(-1).unsqueeze(-1)
+        self.mlp_shared = nn.Sequential(
+            nn.Linear(feature_nc, nhidden, bias=use_bias),            
+            nn.ReLU()
+        )
+        self.mlp_gamma = nn.Linear(nhidden, norm_nc, bias=use_bias)    
+        self.mlp_beta = nn.Linear(nhidden, norm_nc, bias=use_bias)    
 
-        std_x = std_x.unsqueeze(-1).unsqueeze(-1) + eps
-		#std_y = std_y.unsqueeze(-1).unsqueeze(-1) + eps
-        y_fc2 = y_fc2.unsqueeze(-1).unsqueeze(-1)
-        y_fc1 = y_fc1.unsqueeze(-1).unsqueeze(-1)
-        out = (x - mean_x)/ std_x * y_fc2 + y_fc1
+    def forward(self, x, feature):
 
+        # Part 1. generate parameter-free normalized activations
+        normalized = self.param_free_norm(x)
+
+        # Part 2. produce scaling and bias conditioned on feature
+        feature = feature.view(feature.size(0), -1)
+        actv = self.mlp_shared(feature)
+        gamma = self.mlp_gamma(actv)
+        beta = self.mlp_beta(actv)
+
+        # apply scale and bias
+        gamma = gamma.view(*gamma.size()[:2], 1,1)
+        beta = beta.view(*beta.size()[:2], 1,1)
+        out = normalized * (1 + gamma) + beta
 
         return out
+	    
+class LayerNorm(nn.Module):
+    def __init__(self, num_features, eps=1e-5, affine=True):
+        super(LayerNorm, self).__init__()
+        self.num_features = num_features
+        self.affine = affine
+        self.eps = eps
 
+        if self.affine:
+            self.gamma = nn.Parameter(torch.Tensor(num_features).uniform_())
+            self.beta = nn.Parameter(torch.zeros(num_features))
+
+    def forward(self, x):
+        shape = [-1] + [1] * (x.dim() - 1)
+        # print(x.size())
+        if x.size(0) == 1:
+            # These two lines run much faster in pytorch 0.4 than the two lines listed below.
+            mean = x.view(-1).mean().view(*shape)
+            std = x.view(-1).std().view(*shape)
+        else:
+            mean = x.view(x.size(0), -1).mean(1).view(*shape)
+            std = x.view(x.size(0), -1).std(1).view(*shape)
+
+        x = (x - mean) / (std + self.eps)
+
+        if self.affine:
+            shape = [1, -1] + [1] * (x.dim() - 2)
+            x = x * self.gamma.view(*shape) + self.beta.view(*shape)
+        return x
+def get_norm_layer(type):
+    if type=='LN':
+        return functools.partial(LayerNorm,affine=True)
+    if type=='IN':
+        return functools.partial(nn.InstanceNorm2d,affine=True)
+    if type=='BN':
+        return functools.partial(nn.BatchNorm2d,momentum=0.1,affine=True)
+    return None
+
+def get_non_linearity(layer_type='relu'):
+  if layer_type == 'relu':
+    nl_layer = functools.partial(nn.ReLU)
+  elif layer_type == 'lrelu':
+    nl_layer = functools.partial(nn.LeakyReLU,0.1)
+  elif layer_type == 'selu':
+    nl_layer = functools.partial(nn.SELU)
+  else:
+    raise NotImplementedError('nonlinearity activitation [%s] is not found' % layer_type)
+  return nl_layer
+	
+class resblock_transconv(nn.Module):
+    def __init__(self,inc,outc,hiddenc=None,norm_layer='LN',non_linerity_layer='relu'):
+        super(resblock_transconv,self).__init__()
+        norm=get_norm_layer(norm_layer)
+        nll=get_non_linearity(layer_type=non_linerity_layer)
+        hiddenc=inc if hiddenc is None else hiddenc
+        self.model=[]
+        if norm is not None:
+            self.model.append(norm(inc))
+        self.model+=[nll(),
+            nn.Conv2d(inc,hiddenc,3,1,1)]
+        if norm is not None:
+            self.model.append(norm(hiddenc))
+        self.model+=[nll(),
+            nn.ConvTranspose2d(hiddenc,outc,3,2,1,1)]
+        self.model=nn.Sequential(*self.model)
+        self.bypass=nn.Sequential(nn.ConvTranspose2d(inc,outc,3,2,1,1))
+
+    def forward(self,x):
+        residual=x
+        out=self.model(x)+self.bypass(residual)
+        return out
+
+class resblock_upbilin(nn.Module):
+    def __init__(self,inc,outc=None,norm_layer='LN',non_linerity_layer='relu'):
+        super(resblock_upbilin,self).__init__()
+        norm=get_norm_layer(norm_layer)
+        nll=get_non_linearity(layer_type=non_linerity_layer)
+        outc=inc if outc is None else outc
+        self.model=[]
+        if norm is not None:
+            self.model.append(norm(inc))
+        self.model+=[nll(),
+            nn.Conv2d(inc,outc,3,1,1)]
+        if norm is not None:
+            self.model.append(norm(outc))
+        self.model+=[nll(),nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)]
+        self.model=nn.Sequential(*self.model)
+        self.bypass=nn.Sequential(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True))
+
+    def forward(self,x):
+        residual=x
+        out=self.model(x)+self.bypass(residual)
+        return out
+	    
 def Block_S(inc,outc,kernel_size=3,stride=1,padding=1,norm_layer='LN',non_linerity_layer='relu'):
     norm=get_norm_layer(norm_layer)
     nll=get_non_linearity(layer_type=non_linerity_layer)
