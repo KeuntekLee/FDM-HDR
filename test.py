@@ -13,9 +13,7 @@ from models import FDM_HDR
 from utils.utils import *
 from decomposenet import Encoder_S, Encoder_E_FFT
 
-#data_root = '/data1/keuntek/ICCP19/ICCP19/val/'
-data_root_valid = '/data/keuntek/SynHDR_Dataset2/Test'
-data_root = '/data/keuntek/HDR_KALANTARI'
+data_root = '/data/HDR_KALANTARI'
 batch_size = 8
 
 
