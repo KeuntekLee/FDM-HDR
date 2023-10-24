@@ -8,7 +8,7 @@ import torch.nn.init as init
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from dataset.dataset_tfrecord_1440 import Dynamic_Scenes_Dataset
+from dataset.dataset_kalantari import Dynamic_Scenes_Dataset
 from models import FDM_HDR
 from utils.utils import *
 from decomposenet import Encoder_S, Encoder_E_FFT
@@ -33,7 +33,7 @@ from skimage.metrics import structural_similarity as ssim
 val_dataset = Dynamic_Scenes_Dataset(root_dir=data_root, is_training=False, transform=None, crop=False)
 val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=1, pin_memory=True)
 
-model_test = FDM_HDR().cuda()
+model_test = FDMNet().cuda()
 ee_test = Encoder_E_FFT(inc=3,n_downsample=4,outc=256,ndf=64,usekl=False)
 ee_test.load_state_dict(torch.load("./checkpoints/ee_99000.pth"))
 es_test = Encoder_S(n_downsample=2,ndf=64,norm_layer='LN')
@@ -46,13 +46,7 @@ es_test.cuda()
 def requires_grad(model, flag=True):
     for p in model.parameters():
         p.requires_grad = flag
-total_psnr=0.
-total_psnr_l=0.
-total_ssim_mu=0.
-total_ssim_l=0.
-
 model_test.cuda()
-
 model_test.eval()
 #ee_test.eval()
 requires_grad(model_test, False)
@@ -60,10 +54,6 @@ requires_grad(ee_test, False)
 requires_grad(es_test, False)
 print(next(model_test.parameters()).device)
 
-total_psnr=0.
-total_psnr_l=0.
-total_ssim_mu=0.
-total_ssim_l=0.
 checkpoint = torch.load("./checkpoints/FDM_"+str(test_epoch)+".pth")
 model_test.load_state_dict(checkpoint)
 print(test_epoch)
