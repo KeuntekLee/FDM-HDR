@@ -284,7 +284,7 @@ class FDMNet(nn.Module):
         LayerNorm_type = 'WithBias',   ## Other option 'BiasFree'
     ):
 
-        super(Restormer_FDFG_Modulate_Large, self).__init__()
+        super(FDMNet, self).__init__()
 
         self.patch_embed1 = OverlapPatchEmbed(inp_channels, dim)
         self.patch_embed2 = OverlapPatchEmbed(inp_channels, dim)
