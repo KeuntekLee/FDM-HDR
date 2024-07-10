@@ -23,6 +23,10 @@ Constructing a high dynamic range (HDR) image from multi-exposure low dynamic ra
 
 <p align="center"><img src="data/FDM-HDR.png" width="900"></p>
 
+### <u>Module Structures</u>
+
+<p align="center"><img src="data/modules.png" width="900"></p>
+
 ## Experimental Results
 
 
