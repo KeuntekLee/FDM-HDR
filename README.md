@@ -17,13 +17,13 @@ Constructing a high dynamic range (HDR) image from multi-exposure low dynamic ra
 
 ### <u>Decomposition Network Architecture</u>
 
-<p align="center"><img src="data/decomposenet.PNG" width="500"></p>
+<p align="center"><img src="data/decomposenet.png" width="500"></p>
 
 ### <u>FDM-HDR Architecture</u>
 
-<p align="center"><img src="data/FDM-HDR.PNG" width="900"></p>
+<p align="center"><img src="data/FDM-HDR.png" width="900"></p>
 
 ## Experimental Results
 
 
-<p align="center"><img src="data/visual_result.PNG" width="700"></p>
+<p align="center"><img src="data/visual_result.png" width="700"></p>
